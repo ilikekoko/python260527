@@ -1,0 +1,74 @@
+import ctypes
+import os
+import shutil
+from datetime import datetime, timezone
+from pathlib import Path
+
+DOWNLOADS = Path(r"C:\Users\student\Downloads")
+TARGETS = {
+    "images": [".jpg", ".jpeg"],
+    "data": [".csv", ".xlsx"],
+    "docs": [".txt", ".doc", ".pdf"],
+    "archive": [".zip"],
+}
+
+INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+FILE_WRITE_ATTRIBUTES = 0x100
+OPEN_EXISTING = 3
+
+def ensure_dirs(base: Path, folders: dict):
+    for folder in folders:
+        target_dir = base / folder
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+
+def _filetime_from_datetime(dt: datetime) -> int:
+    if dt.tzinfo is None:
+        local_tz = datetime.now().astimezone().tzinfo
+        dt = dt.replace(tzinfo=local_tz)
+    utc_dt = dt.astimezone(timezone.utc)
+    windows_epoch = datetime(1601, 1, 1, tzinfo=timezone.utc)
+    return int((utc_dt - windows_epoch).total_seconds() * 10_000_000)
+
+
+def set_creation_time(path: Path, dt: datetime):
+    handle = ctypes.windll.kernel32.CreateFileW(
+        str(path),
+        FILE_WRITE_ATTRIBUTES,
+        0,
+        None,
+        OPEN_EXISTING,
+        0,
+        None,
+    )
+    if handle == INVALID_HANDLE_VALUE:
+        raise OSError(f"Unable to open file for attribute update: {path}")
+
+    try:
+        creation_time = ctypes.c_longlong(_filetime_from_datetime(dt))
+        if not ctypes.windll.kernel32.SetFileTime(handle, ctypes.byref(creation_time), None, None):
+            raise OSError(f"Unable to set creation time for: {path}")
+    finally:
+        ctypes.windll.kernel32.CloseHandle(handle)
+
+
+def move_files(base: Path, folders: dict):
+    now = datetime.now()
+    for item in base.iterdir():
+        if item.is_file():
+            ext = item.suffix.lower()
+            for folder, exts in folders.items():
+                if ext in exts:
+                    dest = base / folder / item.name
+                    shutil.move(str(item), str(dest))
+                    os.utime(dest, (now.timestamp(), now.timestamp()))
+                    set_creation_time(dest, now)
+                    print(f"Moved: {item.name} -> {folder} (timestamps set to today)")
+                    break
+
+def main():
+    ensure_dirs(DOWNLOADS, TARGETS)
+    move_files(DOWNLOADS, TARGETS)
+
+if __name__ == "__main__":
+    main()
