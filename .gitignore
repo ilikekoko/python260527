@@ -1,2 +1,14 @@
 .env
 \코끼리
+\build
+\dist
+\__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.log
+*.bak
+*.swp
+.DS_Store
+Thumbs.db
